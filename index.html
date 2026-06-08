@@ -327,8 +327,13 @@ const firebaseConfig = {
   messagingSenderId: "YOUR_SENDER_ID",
   appId: "YOUR_APP_ID"
 };
-firebase.initializeApp(firebaseConfig);
-const db = firebase.database();
+const isFirebaseConfigured = !firebaseConfig.apiKey.startsWith("YOUR_");
+let db = null;
+
+if (isFirebaseConfigured) {
+  firebase.initializeApp(firebaseConfig);
+  db = firebase.database();
+}
 
 let results = {};
 let playoffResults = { sf1: null, sf2: null, final: null, third: null };
@@ -338,12 +343,16 @@ function saveState() {
   for (const [k, v] of Object.entries(results)) {
     fbResults["m" + k] = v;
   }
-  db.ref('state').set({ results: fbResults, playoffResults });
+  const state = { results: fbResults, playoffResults };
+
+  if (db) {
+    db.ref('state').set(state);
+  } else {
+    localStorage.setItem('pool-championship-state', JSON.stringify(state));
+  }
 }
 
-// Listen for realtime updates from Firebase
-db.ref('state').on('value', (snapshot) => {
-  const data = snapshot.val();
+function applyState(data) {
   if (data) {
     results = {};
     if (data.results) {
@@ -363,7 +372,16 @@ db.ref('state').on('value', (snapshot) => {
   renderStandings();
   renderPlayoffs();
   updateProgress();
-});
+}
+
+if (db) {
+  // Listen for realtime updates from Firebase.
+  db.ref('state').on('value', (snapshot) => applyState(snapshot.val()));
+} else {
+  // Public demo mode: keep sample interactions in this browser only.
+  const localState = localStorage.getItem('pool-championship-state');
+  applyState(localState ? JSON.parse(localState) : null);
+}
 
 function pname(id) { return PLAYERS[id - 1]; }
 

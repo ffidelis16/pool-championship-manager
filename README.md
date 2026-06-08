@@ -8,6 +8,10 @@ It includes a player roster, match calendar, realtime standings, playoff bracket
 
 > This is a public/template version. The active private tournament data, Firebase project, and organizer password are not included.
 
+[Live demo](https://ffidelis16.github.io/pool-championship-manager/) | [Latest release](https://github.com/ffidelis16/pool-championship-manager/releases/latest)
+
+The public demo automatically uses browser-local storage. Add your Firebase configuration to enable shared realtime results.
+
 ## What It Does
 
 - Shows the full player list.
