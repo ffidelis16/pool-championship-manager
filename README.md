@@ -2,6 +2,8 @@
 
 A single-page tournament manager for a local pool/snooker championship.
 
+![Pool Championship Manager interface](og-image.png)
+
 It includes a player roster, match calendar, realtime standings, playoff bracket, viewer mode, organizer mode, and Firebase Realtime Database sync.
 
 > This is a public/template version. The active private tournament data, Firebase project, and organizer password are not included.
@@ -182,3 +184,7 @@ og-image.png
 ## Notes
 
 This project was extracted from a real active local championship app and converted into a reusable public template. Real tournament data and credentials were intentionally removed.
+
+## License
+
+MIT License. See [LICENSE](LICENSE).
