@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pool Championship Manager</title>
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="shortcut icon" href="favicon.ico">
+<meta property="og:title" content="Pool Championship Manager">
+<meta property="og:description" content="Single-page pool tournament manager with standings, match calendar, playoffs, password-gated editing, and Firebase realtime sync.">
+<meta property="og:image" content="og-image.png">
+<meta property="og:url" content="">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Pool Championship Manager">
+<meta name="twitter:description" content="Single-page pool tournament manager with realtime standings and results.">
+<meta name="twitter:image" content="og-image.png">
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --felt: #1a3a2a;
+    --felt-dark: #0f2318;
+    --felt-mid: #1f4a32;
+    --gold: #c9a84c;
+    --gold-light: #e8c96e;
+    --cream: #f0ead8;
+    --cream-dim: #b8af9a;
+    --red: #c0392b;
+    --border: rgba(201,168,76,0.25);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--felt-dark); color: var(--cream); font-family: 'IBM Plex Sans', sans-serif; min-height: 100vh; }
+
+  header { background: var(--felt-dark); border-bottom: 2px solid var(--gold); padding: 20px 24px 14px; text-align: center; }
+  header h1 { font-family: 'Bebas Neue', sans-serif; font-size: 2.6rem; letter-spacing: 4px; color: var(--gold); line-height: 1; }
+  header p { font-family: 'IBM Plex Mono', monospace; font-size: 0.72rem; color: var(--cream-dim); letter-spacing: 2px; margin-top: 4px; text-transform: uppercase; }
+
+  .tabs { display: flex; justify-content: stretch; border-bottom: 1px solid var(--border); background: var(--felt-dark); position: sticky; top: 0; z-index: 100; }
+  .tab { flex: 1 1 0; min-width: 0; padding: 13px 2px; text-align: center; cursor: pointer; font-family: 'IBM Plex Mono', monospace; font-size: 0.65rem; letter-spacing: 0.5px; text-transform: uppercase; color: var(--cream-dim); border-bottom: 3px solid transparent; transition: all 0.2s; background: none; border-top: none; border-left: none; border-right: none; white-space: nowrap; }
+  .tab:hover { color: var(--cream); }
+  .tab.active { color: var(--gold); border-bottom: 3px solid var(--gold); }
+
+  .panel { display: none; padding: 20px 16px; max-width: 720px; margin: 0 auto; }
+  .panel.active { display: block; }
+
+  .info-box { background: var(--felt-mid); border: 1px solid var(--border); border-radius: 4px; padding: 14px 16px; margin-bottom: 16px; font-family: 'IBM Plex Mono', monospace; font-size: 0.78rem; line-height: 1.9; color: var(--cream-dim); }
+  .info-box strong { color: var(--gold); }
+
+  .roster-table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
+  .roster-table th { font-family: 'IBM Plex Mono', monospace; font-size: 0.65rem; letter-spacing: 1.5px; color: var(--gold); padding: 8px; border-bottom: 1px solid var(--border); text-align: left; }
+  .roster-table td { padding: 10px 8px; border-bottom: 1px solid rgba(255,255,255,0.05); font-family: 'IBM Plex Mono', monospace; font-size: 0.85rem; }
+  .roster-num { color: var(--gold); font-weight: 600; }
+
+  .round-block { margin-bottom: 20px; }
+  .round-title { font-family: 'Bebas Neue', sans-serif; font-size: 0.9rem; letter-spacing: 3px; color: var(--gold); padding: 8px 0; border-bottom: 1px solid var(--border); margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
+  .round-progress { font-family: 'IBM Plex Mono', monospace; font-size: 0.67rem; color: var(--cream-dim); }
+  .turn-sep { font-family: 'Bebas Neue', sans-serif; font-size: 1.1rem; letter-spacing: 4px; color: var(--cream); background: rgba(201,168,76,0.1); border: 1px solid var(--border); padding: 10px 16px; margin: 20px 0 12px; border-radius: 4px; }
+
+  .match-row { display: flex; align-items: center; padding: 7px 10px; margin-bottom: 4px; background: var(--felt-mid); border: 1px solid transparent; border-radius: 4px; gap: 8px; }
+  .match-row.done { border-color: rgba(201,168,76,0.2); }
+  .match-num { font-family: 'IBM Plex Mono', monospace; font-size: 0.62rem; color: var(--cream-dim); min-width: 34px; }
+  .match-players { flex: 1; display: flex; align-items: center; gap: 6px; }
+  .player-btn { flex: 1; padding: 7px 8px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); border-radius: 3px; color: var(--cream); font-family: 'IBM Plex Sans', sans-serif; font-size: 0.78rem; cursor: pointer; text-align: center; transition: all 0.15s; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .player-btn:hover { background: rgba(201,168,76,0.15); border-color: var(--gold); }
+  .player-btn.winner { background: var(--gold); color: var(--felt-dark); border-color: var(--gold); font-weight: 600; }
+  .player-btn.loser { opacity: 0.28; border-color: transparent; }
+  .vs { font-family: 'IBM Plex Mono', monospace; font-size: 0.58rem; color: var(--cream-dim); }
+
+  .progress-bar-wrap { background: rgba(255,255,255,0.08); border-radius: 2px; height: 4px; margin-bottom: 6px; overflow: hidden; }
+  .progress-bar { height: 100%; background: var(--gold); transition: width 0.4s ease; border-radius: 2px; }
+  .progress-label { font-family: 'IBM Plex Mono', monospace; font-size: 0.67rem; color: var(--cream-dim); text-align: right; margin-bottom: 16px; }
+
+  .standings-table { width: 100%; border-collapse: collapse; font-family: 'IBM Plex Mono', monospace; font-size: 0.8rem; }
+  .standings-table th { text-align: left; padding: 10px 8px; font-size: 0.62rem; letter-spacing: 1.5px; color: var(--gold); border-bottom: 1px solid var(--border); text-transform: uppercase; }
+  .standings-table td { padding: 9px 8px; border-bottom: 1px solid rgba(255,255,255,0.05); }
+  .standings-table tr:hover td { background: var(--felt-mid); }
+  .playoff-zone { background: rgba(201,168,76,0.05); }
+  .pts { font-weight: 600; color: var(--gold-light); }
+  .zone-label { font-family: 'IBM Plex Mono', monospace; font-size: 0.63rem; letter-spacing: 1px; color: var(--gold); padding: 6px 0 10px; text-transform: uppercase; opacity: 0.7; }
+  .playoff-divider td { border-top: 1px dashed rgba(201,168,76,0.4); }
+
+  .bracket-label { font-family: 'Bebas Neue', sans-serif; font-size: 1rem; letter-spacing: 3px; color: var(--gold); margin: 16px 0 10px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+  .bracket-match { background: var(--felt-mid); border: 1px solid var(--border); border-radius: 4px; margin-bottom: 10px; overflow: hidden; }
+  .bracket-player { display: flex; align-items: center; padding: 12px 14px; gap: 10px; cursor: pointer; transition: background 0.15s; }
+  .bracket-player:hover { background: rgba(201,168,76,0.1); }
+  .bracket-player + .bracket-player { border-top: 1px solid var(--border); }
+  .bracket-player.winner { background: rgba(201,168,76,0.15); }
+  .bracket-player.loser { opacity: 0.35; }
+  .bracket-seed { font-family: 'Bebas Neue', sans-serif; font-size: 0.9rem; color: var(--gold); min-width: 22px; }
+  .bracket-name { flex: 1; font-family: 'IBM Plex Sans', sans-serif; font-size: 0.9rem; }
+  .bracket-pts { font-family: 'IBM Plex Mono', monospace; font-size: 0.68rem; color: var(--cream-dim); }
+  .champion-banner { text-align: center; padding: 28px 16px; background: linear-gradient(135deg, rgba(201,168,76,0.15), rgba(201,168,76,0.04)); border: 1px solid var(--gold); border-radius: 6px; margin-bottom: 20px; }
+  .champion-banner .trophy { font-size: 3rem; }
+  .champion-banner h2 { font-family: 'Bebas Neue', sans-serif; font-size: 1rem; letter-spacing: 4px; color: var(--gold); margin: 8px 0 4px; }
+  .champion-banner .champ-name { font-family: 'Bebas Neue', sans-serif; font-size: 2.4rem; color: var(--cream); letter-spacing: 2px; }
+
+  .cal-day { margin-bottom: 20px; }
+  .cal-day-header { display: flex; justify-content: space-between; align-items: center; font-family: 'Bebas Neue', sans-serif; font-size: 0.9rem; letter-spacing: 3px; color: var(--gold); padding: 8px 0; border-bottom: 1px solid var(--border); margin-bottom: 8px; }
+  .cal-day-sub { font-family: 'IBM Plex Mono', monospace; font-size: 0.65rem; color: var(--cream-dim); }
+
+  /* Modal */
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 9999; display: flex; align-items: center; justify-content: center; padding: 20px; }
+  .modal-overlay.hidden { display: none; }
+  .modal { background: var(--felt-dark); border: 2px solid var(--gold); border-radius: 8px; max-width: 380px; width: 100%; padding: 32px 28px; text-align: center; }
+  .modal h2 { font-family: 'Bebas Neue', sans-serif; font-size: 1.8rem; letter-spacing: 3px; color: var(--gold); margin-bottom: 6px; }
+  .modal p { font-family: 'IBM Plex Sans', sans-serif; font-size: 0.85rem; color: var(--cream-dim); line-height: 1.6; margin-bottom: 20px; }
+  .modal-btn { display: block; width: 100%; padding: 14px; margin-bottom: 10px; border-radius: 5px; font-family: 'IBM Plex Sans', sans-serif; font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: all 0.15s; border: none; }
+  .modal-btn.primary { background: var(--gold); color: var(--felt-dark); }
+  .modal-btn.primary:hover { background: var(--gold-light); }
+  .modal-btn.secondary { background: transparent; color: var(--cream); border: 1px solid var(--border); }
+  .modal-btn.secondary:hover { border-color: var(--gold); color: var(--gold); }
+  .modal-btn-hint { font-family: 'IBM Plex Mono', monospace; font-size: 0.65rem; color: var(--cream-dim); margin-top: -4px; margin-bottom: 12px; }
+  .modal-input { width: 100%; padding: 12px 14px; background: var(--felt-mid); border: 1px solid var(--border); border-radius: 4px; color: var(--cream); font-family: 'IBM Plex Mono', monospace; font-size: 0.9rem; text-align: center; margin-bottom: 10px; outline: none; }
+  .modal-input:focus { border-color: var(--gold); }
+  .modal-input.error { border-color: var(--red); animation: shake 0.3s; }
+  @keyframes shake { 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+  .modal-error { font-family: 'IBM Plex Mono', monospace; font-size: 0.72rem; color: var(--red); margin-bottom: 10px; min-height: 1.2em; }
+  .modal-step { display: none; }
+  .modal-step.active { display: block; }
+
+  /* Mode badge */
+  .mode-badge { display: inline-block; font-family: 'IBM Plex Mono', monospace; font-size: 0.62rem; letter-spacing: 1px; padding: 3px 10px; border-radius: 3px; cursor: pointer; margin-top: 8px; transition: all 0.15s; text-transform: uppercase; }
+  .mode-badge.viewer { background: rgba(255,255,255,0.08); color: var(--cream-dim); border: 1px solid rgba(255,255,255,0.1); }
+  .mode-badge.editor { background: rgba(201,168,76,0.15); color: var(--gold); border: 1px solid var(--gold); }
+  .mode-badge:hover { opacity: 0.8; }
+
+  /* Read-only mode */
+  body.view-only .player-btn { cursor: default; pointer-events: none; }
+  body.view-only .player-btn:hover { background: rgba(255,255,255,0.04); border-color: rgba(255,255,255,0.1); }
+  body.view-only .bracket-player { cursor: default; pointer-events: none; }
+  body.view-only .bracket-player:hover { background: transparent; }
+</style>
+</head>
+<body>
+
+<div id="welcome-modal" class="modal-overlay">
+  <div class="modal">
+    <div id="step-choose" class="modal-step active">
+      <h2>🎱 Sinuca 2026</h2>
+      <p>Bem-vindo ao campeonato! Acompanhe a classificação, as partidas e os playoffs em tempo real.</p>
+      <button class="modal-btn primary" onclick="enterViewer()">Quero acompanhar o campeonato</button>
+      <div class="modal-btn-hint">Visualize partidas, classificação e playoffs</div>
+      <button class="modal-btn secondary" onclick="showPasswordStep()">Quero marcar resultados de partidas</button>
+      <div class="modal-btn-hint">Requer senha de organizador</div>
+    </div>
+    <div id="step-password" class="modal-step">
+      <h2>🔐 Acesso de Organizador</h2>
+      <p>Digite a senha para marcar resultados das partidas.</p>
+      <input type="password" id="password-input" class="modal-input" placeholder="Senha" onkeydown="if(event.key==='Enter')tryPassword()">
+      <div class="modal-error" id="password-error"></div>
+      <button class="modal-btn primary" onclick="tryPassword()">Entrar</button>
+      <button class="modal-btn secondary" onclick="backToChoose()">Voltar</button>
+    </div>
+  </div>
+</div>
+
+<header>
+  <h1>🎱 Sinuca 2026</h1>
+  <p>14 Jogadores · 2 Turnos · Round Robin + Playoffs</p>
+  <div id="mode-badge" class="mode-badge viewer" onclick="showModal()" title="Clique para trocar o modo">Modo: Visualização</div>
+</header>
+
+<div class="tabs">
+  <button class="tab active" onclick="showTab('roster')">Elenco</button>
+  <button class="tab" onclick="showTab('calendar')">Calendário</button>
+  <button class="tab" onclick="showTab('matches')">Partidas</button>
+  <button class="tab" onclick="showTab('standings')">Classificação</button>
+  <button class="tab" onclick="showTab('playoffs')">Finais</button>
+</div>
+
+<!-- ELENCO -->
+<div id="tab-roster" class="panel active">
+  <div class="info-box">
+    <strong>FASE REGULAR — 2 TURNOS</strong><br>
+    182 partidas · todos jogam contra todos duas vezes<br>
+    Vitória = 2 pts · Derrota = 0 pts<br><br>
+    <strong>PLAYOFFS — Top 4</strong><br>
+    Semi 1: 1º × 4º · Semi 2: 2º × 3º<br>
+    Disputa 3º lugar · Final<br><br>
+    <strong>DESEMPATE</strong><br>
+    Confronto direto (soma dos 2 turnos) · Sorteio<br><br>
+    <strong>CALENDÁRIO</strong><br>
+    Quartas e Sextas · 5 partidas/dia · 37 dias<br>
+    Início: 08/04/2026 · Encerramento: 12/08/2026
+  </div>
+  <table class="roster-table">
+    <thead><tr><th>#</th><th>Jogador</th></tr></thead>
+    <tbody id="roster-body"></tbody>
+  </table>
+</div>
+
+<!-- CALENDÁRIO -->
+<div id="tab-calendar" class="panel">
+  <div id="calendar-content"></div>
+</div>
+
+<!-- PARTIDAS -->
+<div id="tab-matches" class="panel">
+  <div class="progress-bar-wrap"><div class="progress-bar" id="progress-bar" style="width:0%"></div></div>
+  <div class="progress-label" id="progress-label">0 / 182 partidas</div>
+  <div id="matches-list"></div>
+</div>
+
+<!-- CLASSIFICAÇÃO -->
+<div id="tab-standings" class="panel">
+  <div id="standings-content"></div>
+</div>
+
+<!-- PLAYOFFS -->
+<div id="tab-playoffs" class="panel">
+  <div id="playoffs-content"></div>
+</div>
+
+<script>
+// Change this before deploying your own tournament.
+// This is a UI-level editing gate, not a replacement for Firebase Security Rules.
+const EDIT_PASSWORD = 'change-me-before-deploy';
+let isEditor = false;
+
+function enterViewer() {
+  isEditor = false;
+  document.body.classList.add('view-only');
+  updateBadge();
+  closeModal();
+}
+
+function showPasswordStep() {
+  document.getElementById('step-choose').classList.remove('active');
+  document.getElementById('step-password').classList.add('active');
+  document.getElementById('password-error').textContent = '';
+  document.getElementById('password-input').value = '';
+  setTimeout(() => document.getElementById('password-input').focus(), 100);
+}
+
+function backToChoose() {
+  document.getElementById('step-password').classList.remove('active');
+  document.getElementById('step-choose').classList.add('active');
+}
+
+function tryPassword() {
+  const input = document.getElementById('password-input');
+  if (input.value === EDIT_PASSWORD) {
+    isEditor = true;
+    document.body.classList.remove('view-only');
+    updateBadge();
+    closeModal();
+  } else {
+    input.classList.add('error');
+    document.getElementById('password-error').textContent = 'Senha incorreta';
+    setTimeout(() => input.classList.remove('error'), 400);
+  }
+}
+
+function updateBadge() {
+  const badge = document.getElementById('mode-badge');
+  if (isEditor) {
+    badge.className = 'mode-badge editor';
+    badge.textContent = 'Modo: Organizador';
+  } else {
+    badge.className = 'mode-badge viewer';
+    badge.textContent = 'Modo: Visualização';
+  }
+}
+
+function showModal() {
+  document.getElementById('step-password').classList.remove('active');
+  document.getElementById('step-choose').classList.add('active');
+  document.getElementById('welcome-modal').classList.remove('hidden');
+}
+
+function closeModal() {
+  document.getElementById('welcome-modal').classList.add('hidden');
+}
+
+// Start in view-only mode
+document.body.classList.add('view-only');
+
+const PLAYERS = [
+  'Amarildo','Arnaldo','Carcache','Donaldo','Edson',
+  'Eustáquio','Fábio','Fausto','Francisco','Ivaldo',
+  'Joel','Lázaro','Procópio','Saporetti'
+];
+
+const ROUNDS = [
+  [[1,14],[2,13],[3,12],[4,11],[5,10],[6,9],[7,8]],
+  [[2,14],[3,1],[4,13],[5,12],[6,11],[7,10],[8,9]],
+  [[3,14],[4,2],[5,1],[6,13],[7,12],[8,11],[9,10]],
+  [[4,14],[5,3],[6,2],[7,1],[8,13],[9,12],[10,11]],
+  [[5,14],[6,4],[7,3],[8,2],[9,1],[10,13],[11,12]],
+  [[6,14],[7,5],[8,4],[9,3],[10,2],[11,1],[12,13]],
+  [[7,14],[8,6],[9,5],[10,4],[11,3],[12,2],[13,1]],
+  [[8,14],[9,7],[10,6],[11,5],[12,4],[13,3],[1,2]],
+  [[9,14],[10,8],[11,7],[12,6],[13,5],[1,4],[2,3]],
+  [[10,14],[11,9],[12,8],[13,7],[1,6],[2,5],[3,4]],
+  [[11,14],[12,10],[13,9],[1,8],[2,7],[3,6],[4,5]],
+  [[12,14],[13,11],[1,10],[2,9],[3,8],[4,7],[5,6]],
+  [[13,14],[1,12],[2,11],[3,10],[4,9],[5,8],[6,7]]
+];
+
+// Build flat match list: indices 0-90 = turno 1, 91-181 = turno 2
+const ALL_MATCHES = [];
+for (let t = 1; t <= 2; t++) {
+  ROUNDS.forEach((round, ri) => {
+    round.forEach(([a, b]) => ALL_MATCHES.push({ a, b, turn: t, round: ri + 1 }));
+  });
+}
+
+const GAME_DAYS = [
+  'Qua 08/04','Sex 10/04','Qua 15/04','Sex 17/04','Qua 22/04',
+  'Sex 24/04','Qua 29/04','Sex 01/05','Qua 06/05','Sex 08/05',
+  'Qua 13/05','Sex 15/05','Qua 20/05','Sex 22/05','Qua 27/05',
+  'Sex 29/05','Qua 03/06','Sex 05/06','Qua 10/06','Sex 12/06',
+  'Qua 17/06','Sex 19/06','Qua 24/06','Sex 26/06','Qua 01/07',
+  'Sex 03/07','Qua 08/07','Sex 10/07','Qua 15/07','Sex 17/07',
+  'Qua 22/07','Sex 24/07','Qua 29/07','Sex 31/07','Qua 05/08',
+  'Sex 07/08','Qua 12/08'
+];
+
+const firebaseConfig = {
+  apiKey: "YOUR_FIREBASE_API_KEY",
+  authDomain: "YOUR_PROJECT.firebaseapp.com",
+  databaseURL: "https://YOUR_PROJECT-default-rtdb.firebaseio.com",
+  projectId: "YOUR_PROJECT",
+  storageBucket: "YOUR_PROJECT.firebasestorage.app",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId: "YOUR_APP_ID"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+let results = {};
+let playoffResults = { sf1: null, sf2: null, final: null, third: null };
+
+function saveState() {
+  const fbResults = {};
+  for (const [k, v] of Object.entries(results)) {
+    fbResults["m" + k] = v;
+  }
+  db.ref('state').set({ results: fbResults, playoffResults });
+}
+
+// Listen for realtime updates from Firebase
+db.ref('state').on('value', (snapshot) => {
+  const data = snapshot.val();
+  if (data) {
+    results = {};
+    if (data.results) {
+      for (const [k, v] of Object.entries(data.results)) {
+        if (v != null) {
+          results[String(k).replace(/^m/, '')] = v;
+        }
+      }
+    }
+    playoffResults = data.playoffResults || { sf1: null, sf2: null, final: null, third: null };
+  } else {
+    results = {};
+    playoffResults = { sf1: null, sf2: null, final: null, third: null };
+  }
+  renderMatches();
+  renderCalendar();
+  renderStandings();
+  renderPlayoffs();
+  updateProgress();
+});
+
+function pname(id) { return PLAYERS[id - 1]; }
+
+// ROSTER
+(function() {
+  const b = document.getElementById('roster-body');
+  PLAYERS.forEach((name, i) => {
+    b.innerHTML += `<tr><td class="roster-num">${i+1}</td><td>${name}</td></tr>`;
+  });
+})();
+
+// SET WINNER
+function setWinner(idx, winner) {
+  if (results[idx] === winner) delete results[idx];
+  else results[idx] = winner;
+  saveState();
+  const active = document.querySelector('.tab.active');
+  const activeTab = active ? active.textContent.trim().toLowerCase() : '';
+  renderMatches();
+  renderCalendar();
+  renderStandings();
+  renderPlayoffs();
+  updateProgress();
+}
+
+function updateProgress() {
+  const done = Object.keys(results).length;
+  const el = document.getElementById('progress-bar');
+  const lbl = document.getElementById('progress-label');
+  if (el) el.style.width = (done / 182 * 100) + '%';
+  if (lbl) lbl.textContent = `${done} / 182 partidas`;
+}
+
+// MATCH ROW HTML
+function matchRowHTML(idx, num) {
+  const m = ALL_MATCHES[idx];
+  const w = results[idx];
+  const wA = w === m.a ? 'winner' : w === m.b ? 'loser' : '';
+  const wB = w === m.b ? 'winner' : w === m.a ? 'loser' : '';
+  return `<div class="match-row ${w !== undefined ? 'done' : ''}">
+    <span class="match-num">#${num}</span>
+    <div class="match-players">
+      <button class="player-btn ${wA}" onclick="setWinner(${idx},${m.a})">${pname(m.a)}</button>
+      <span class="vs">vs</span>
+      <button class="player-btn ${wB}" onclick="setWinner(${idx},${m.b})">${pname(m.b)}</button>
+    </div>
+  </div>`;
+}
+
+// MATCHES
+function renderMatches() {
+  const list = document.getElementById('matches-list');
+  if (!list) return;
+  let html = '';
+  for (let t = 1; t <= 2; t++) {
+    html += `<div class="turn-sep">${t === 1 ? '1º Turno — Partidas #1 a #91' : '2º Turno — Partidas #92 a #182'}</div>`;
+    ROUNDS.forEach((round, ri) => {
+      const base = (t - 1) * 91;
+      const roundStart = base + ri * 7;
+      const done = round.filter((_, mi) => results[roundStart + mi] !== undefined).length;
+      html += `<div class="round-block"><div class="round-title"><span>Rodada ${ri+1}</span><span class="round-progress">${done}/7</span></div>`;
+      round.forEach((_, mi) => {
+        const idx = roundStart + mi;
+        html += matchRowHTML(idx, idx + 1);
+      });
+      html += `</div>`;
+    });
+  }
+  list.innerHTML = html;
+}
+
+// CALENDAR
+function renderCalendar() {
+  const c = document.getElementById('calendar-content');
+  if (!c) return;
+  let html = `<div class="info-box">
+    <strong>182 PARTIDAS · 37 DIAS DE JOGO</strong><br>
+    5 partidas por dia · Quartas e Sextas<br>
+    08/04/2026 → 12/08/2026
+  </div>`;
+
+  GAME_DAYS.forEach((dateStr, di) => {
+    const startIdx = di * 5;
+    const endIdx = Math.min(startIdx + 4, 181);
+    const dayMatches = [];
+    for (let i = startIdx; i <= endIdx; i++) dayMatches.push(i);
+    const done = dayMatches.filter(i => results[i] !== undefined).length;
+    const isLastDay = di === 36;
+
+    if (di === 18) html += `<div class="turn-sep">2º Turno</div>`;
+
+    html += `<div class="cal-day">
+      <div class="cal-day-header">
+        <span>Dia ${di+1} — ${dateStr}</span>
+        <span class="cal-day-sub">${done}/${dayMatches.length}</span>
+      </div>`;
+    dayMatches.forEach(idx => { html += matchRowHTML(idx, idx + 1); });
+
+    if (isLastDay) {
+      const allDone = Object.keys(results).length === 182;
+      html += `<div class="match-row" style="opacity:${allDone?1:0.4};margin-top:8px">
+        <span class="match-num">#183</span>
+        <div class="match-players"><span style="font-size:0.75rem;color:var(--cream-dim)">Playoffs (#183–186) — registrar na aba Playoffs</span></div>
+      </div>`;
+    }
+    html += `</div>`;
+  });
+
+  c.innerHTML = html;
+}
+
+// STANDINGS
+function getStandings() {
+  const s = PLAYERS.map((name, i) => ({ id: i+1, name, pts: 0, wins: 0, losses: 0, played: 0 }));
+  Object.entries(results).forEach(([idx, winner]) => {
+    const m = ALL_MATCHES[Number(idx)];
+    const pa = s[m.a-1], pb = s[m.b-1];
+    pa.played++; pb.played++;
+    if (winner === m.a) { pa.pts += 2; pa.wins++; pb.losses++; }
+    else { pb.pts += 2; pb.wins++; pa.losses++; }
+  });
+  s.sort((x, y) => {
+    if (y.pts !== x.pts) return y.pts - x.pts;
+    let xw = 0, yw = 0;
+    ALL_MATCHES.forEach((m, i) => {
+      if (!((m.a===x.id&&m.b===y.id)||(m.a===y.id&&m.b===x.id))) return;
+      const w = results[i];
+      if (w === x.id) xw++;
+      if (w === y.id) yw++;
+    });
+    return yw - xw;
+  });
+  return s;
+}
+
+function renderStandings() {
+  const el = document.getElementById('standings-content');
+  if (!el) return;
+  const s = getStandings();
+  const done = Object.keys(results).length;
+  el.innerHTML = `
+    <div class="zone-label">▲ Top 4 classificam para os Playoffs</div>
+    <table class="standings-table">
+      <thead><tr><th>#</th><th>Jogador</th><th>J</th><th>V</th><th>D</th><th>PTS</th></tr></thead>
+      <tbody>${s.map((p,i) => `
+        <tr class="${i<4?'playoff-zone':''} ${i===4?'playoff-divider':''}">
+          <td>${i+1}º</td><td>${p.name}</td><td>${p.played}</td>
+          <td>${p.wins}</td><td>${p.losses}</td><td class="pts">${p.pts}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+    <div style="height:10px"></div>
+    <div class="info-box"><strong>DESEMPATE</strong> Pontos · Confronto direto · Sorteio</div>
+    ${done===182?`<div class="info-box" style="border-color:var(--gold);color:var(--gold)">✓ Fase regular concluída — acesse Playoffs</div>`:''}`;
+}
+
+// PLAYOFFS
+function renderPlayoffs() {
+  const c = document.getElementById('playoffs-content');
+  if (!c) return;
+  const s = getStandings();
+  const done = Object.keys(results).length;
+
+  if (done < 182) {
+    const top4 = s.slice(0,4);
+    c.innerHTML = `<div class="info-box"><strong>AGUARDANDO FASE REGULAR</strong><br>${done} / 182 partidas concluídas</div>
+      <table class="standings-table"><thead><tr><th>#</th><th>Provável classificado</th><th>PTS</th></tr></thead>
+      <tbody>${top4.map((p,i)=>`<tr class="playoff-zone"><td>${i+1}º</td><td>${p.name}</td><td class="pts">${p.pts}</td></tr>`).join('')}</tbody></table>`;
+    return;
+  }
+
+  const [p1,p2,p3,p4] = s.slice(0,4);
+  const sf1W = playoffResults.sf1;
+  const sf2W = playoffResults.sf2;
+  const sf1Winner = sf1W==='p1'?p1:sf1W==='p4'?p4:null;
+  const sf1Loser  = sf1W==='p1'?p4:sf1W==='p4'?p1:null;
+  const sf2Winner = sf2W==='p2'?p2:sf2W==='p3'?p3:null;
+  const sf2Loser  = sf2W==='p2'?p3:sf2W==='p3'?p2:null;
+  const finalW = playoffResults.final;
+  const thirdW = playoffResults.third;
+  const champion = finalW==='fw1'?sf1Winner:finalW==='fw2'?sf2Winner:null;
+
+  function pcls(match, key) {
+    const w = playoffResults[match];
+    if (!w) return '';
+    return w === key ? 'winner' : 'loser';
+  }
+
+  let html = '';
+  if (champion) {
+    const second = finalW==='fw1'?sf2Winner:sf1Winner;
+    const third = thirdW==='tl1'?sf1Loser:thirdW==='tl2'?sf2Loser:null;
+    html += `<div class="champion-banner"><div class="trophy">🏆</div><h2>Campeão</h2><div class="champ-name">${champion.name}</div></div>
+    <div class="info-box"><strong>RESULTADO FINAL</strong><br>
+    🥇 1º — ${champion.name}<br>🥈 2º — ${second?second.name:'—'}<br>🥉 3º — ${third?third.name:'—'}</div>`;
+  }
+
+  html += `
+  <div class="bracket-label">Semifinal 1 — Partida #183 · 1º × 4º</div>
+  <div class="bracket-match">
+    <div class="bracket-player ${pcls('sf1','p1')}" onclick="setPO('sf1','p1')">
+      <span class="bracket-seed">1º</span><span class="bracket-name">${p1.name}</span>
+      <span class="bracket-pts">${p1.pts}pts</span>${sf1W==='p1'?'<span style="color:var(--gold);font-size:0.7rem">→ Final</span>':''}
+    </div>
+    <div class="bracket-player ${pcls('sf1','p4')}" onclick="setPO('sf1','p4')">
+      <span class="bracket-seed">4º</span><span class="bracket-name">${p4.name}</span>
+      <span class="bracket-pts">${p4.pts}pts</span>${sf1W==='p4'?'<span style="color:var(--gold);font-size:0.7rem">→ Final</span>':''}
+    </div>
+  </div>
+  <div class="bracket-label">Semifinal 2 — Partida #184 · 2º × 3º</div>
+  <div class="bracket-match">
+    <div class="bracket-player ${pcls('sf2','p2')}" onclick="setPO('sf2','p2')">
+      <span class="bracket-seed">2º</span><span class="bracket-name">${p2.name}</span>
+      <span class="bracket-pts">${p2.pts}pts</span>${sf2W==='p2'?'<span style="color:var(--gold);font-size:0.7rem">→ Final</span>':''}
+    </div>
+    <div class="bracket-player ${pcls('sf2','p3')}" onclick="setPO('sf2','p3')">
+      <span class="bracket-seed">3º</span><span class="bracket-name">${p3.name}</span>
+      <span class="bracket-pts">${p3.pts}pts</span>${sf2W==='p3'?'<span style="color:var(--gold);font-size:0.7rem">→ Final</span>':''}
+    </div>
+  </div>`;
+
+  if (sf1W && sf2W) {
+    html += `
+    <div class="bracket-label">Disputa 3º Lugar — Partida #185</div>
+    <div class="bracket-match">
+      <div class="bracket-player ${pcls('third','tl1')}" onclick="setPO('third','tl1')">
+        <span class="bracket-seed">🥉</span><span class="bracket-name">${sf1Loser?sf1Loser.name:'—'}</span>
+        ${thirdW==='tl1'?'<span style="color:var(--gold);font-size:0.7rem">3º Lugar</span>':''}
+      </div>
+      <div class="bracket-player ${pcls('third','tl2')}" onclick="setPO('third','tl2')">
+        <span class="bracket-seed">🥉</span><span class="bracket-name">${sf2Loser?sf2Loser.name:'—'}</span>
+        ${thirdW==='tl2'?'<span style="color:var(--gold);font-size:0.7rem">3º Lugar</span>':''}
+      </div>
+    </div>
+    <div class="bracket-label">🏆 Final — Partida #186</div>
+    <div class="bracket-match">
+      <div class="bracket-player ${pcls('final','fw1')}" onclick="setPO('final','fw1')">
+        <span class="bracket-seed">🥇</span><span class="bracket-name">${sf1Winner?sf1Winner.name:'—'}</span>
+        ${finalW==='fw1'?'<span style="color:var(--gold);font-weight:600">CAMPEÃO</span>':''}
+      </div>
+      <div class="bracket-player ${pcls('final','fw2')}" onclick="setPO('final','fw2')">
+        <span class="bracket-seed">🥇</span><span class="bracket-name">${sf2Winner?sf2Winner.name:'—'}</span>
+        ${finalW==='fw2'?'<span style="color:var(--gold);font-weight:600">CAMPEÃO</span>':''}
+      </div>
+    </div>`;
+  }
+
+  c.innerHTML = html;
+}
+
+function setPO(match, winner) {
+  if (playoffResults[match] === winner) playoffResults[match] = null;
+  else {
+    playoffResults[match] = winner;
+    if (match === 'sf1' || match === 'sf2') { playoffResults.final = null; playoffResults.third = null; }
+  }
+  saveState();
+  renderPlayoffs();
+}
+
+function showTab(name) {
+  const names = ['roster','calendar','matches','standings','playoffs'];
+  document.querySelectorAll('.tab').forEach((t, i) => t.classList.toggle('active', names[i] === name));
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.getElementById(`tab-${name}`).classList.add('active');
+  if (name === 'calendar') renderCalendar();
+  if (name === 'matches') { renderMatches(); updateProgress(); }
+  if (name === 'standings') renderStandings();
+  if (name === 'playoffs') renderPlayoffs();
+}
+
+</script>
+</body>
+</html>
